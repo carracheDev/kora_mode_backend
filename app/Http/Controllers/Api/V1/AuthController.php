@@ -9,7 +9,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -25,13 +27,11 @@ class AuthController extends Controller
         ]);
 
         $user = User::query()->create($attributes);
-        Auth::guard('web')->login($user);
-        $request->session()->regenerate();
 
-        return CustomerResource::make($user)->response()->setStatusCode(201);
+        return $this->customerResponse($request, $user, 201);
     }
 
-    public function login(Request $request): CustomerResource
+    public function login(Request $request): JsonResponse
     {
         $request->merge(['email' => mb_strtolower(trim((string) $request->input('email')))]);
 
@@ -41,16 +41,13 @@ class AuthController extends Controller
             'remember' => ['sometimes', 'boolean'],
         ]);
 
-        if (! Auth::guard('web')->attempt(
-            ['email' => $credentials['email'], 'password' => $credentials['password']],
-            $credentials['remember'] ?? false,
-        )) {
+        $user = User::query()->where('email', $credentials['email'])->first();
+
+        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages(['email' => [__('auth.failed')]]);
         }
 
-        $request->session()->regenerate();
-
-        return CustomerResource::make($request->user());
+        return $this->customerResponse($request, $user, 200, $credentials['remember'] ?? false);
     }
 
     public function me(Request $request): CustomerResource
@@ -60,10 +57,42 @@ class AuthController extends Controller
 
     public function logout(Request $request): Response
     {
-        Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        $user = $request->user();
+        $currentToken = $user->currentAccessToken();
+
+        if ($currentToken instanceof PersonalAccessToken) {
+            $currentToken->delete();
+        }
+
+        if ($request->hasSession()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->noContent();
+    }
+
+    private function customerResponse(Request $request, User $user, int $status = 200, bool $remember = false): JsonResponse
+    {
+        $resource = CustomerResource::make($user);
+
+        if ($request->hasSession()) {
+            $this->startSessionIfAvailable($request, $user, $remember);
+        }
+
+        $resource->additional(['token' => $user->createToken('kora-mode-web')->plainTextToken]);
+
+        return $resource->response()->setStatusCode($status);
+    }
+
+    private function startSessionIfAvailable(Request $request, User $user, bool $remember = false): void
+    {
+        if (! $request->hasSession()) {
+            return;
+        }
+
+        Auth::guard('web')->login($user, $remember);
+        $request->session()->regenerate();
     }
 }

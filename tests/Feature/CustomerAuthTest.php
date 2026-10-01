@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 class CustomerAuthTest extends TestCase
@@ -22,14 +23,15 @@ class CustomerAuthTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('data.email', 'awa.demo@example.com')
-            ->assertJsonMissingPath('data.password');
+            ->assertJsonMissingPath('data.password')
+            ->assertJsonStructure(['data' => ['id', 'name', 'email'], 'token']);
 
         $this->assertDatabaseHas('users', [
             'email' => 'awa.demo@example.com',
             'phone' => '+2290100000000',
         ]);
 
-        $this->getJson('/api/v1/auth/me')->assertOk()
+        $this->withToken($response->json('token'))->getJson('/api/v1/auth/me')->assertOk()
             ->assertJsonPath('data.name', 'Awa Demo');
     }
 
@@ -40,13 +42,18 @@ class CustomerAuthTest extends TestCase
             'password' => 'DemoPassword2026',
         ]);
 
-        $this->postJson('/api/v1/auth/login', [
+        $login = $this->postJson('/api/v1/auth/login', [
             'email' => 'CUSTOMER@example.com',
             'password' => 'DemoPassword2026',
-        ])->assertOk()->assertJsonPath('data.email', 'customer@example.com');
+        ]);
+        $login->assertOk()->assertJsonPath('data.email', 'customer@example.com');
+        $token = $login->json('token');
 
-        $this->postJson('/api/v1/auth/logout')->assertNoContent();
-        $this->getJson('/api/v1/auth/me')->assertUnauthorized();
+        $this->withToken($token)->getJson('/api/v1/auth/me')->assertOk();
+        $this->withToken($token)->postJson('/api/v1/auth/logout')->assertNoContent();
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+        Auth::forgetGuards();
+        $this->withToken($token)->getJson('/api/v1/auth/me')->assertUnauthorized();
     }
 
     public function test_registration_requires_a_confirmed_strong_password(): void

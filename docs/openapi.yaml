@@ -1,0 +1,468 @@
+openapi: 3.1.0
+info:
+  title: KORA MODE API
+  version: 1.0.0
+  description: |
+    API REST de la boutique de démonstration KORA MODE. Les prix, stocks, notes,
+    commandes et états de paiement peuvent être des données de démonstration.
+    Les montants sont des entiers en FCFA. Les paiements FedaPay restent en sandbox
+    tant qu'une clé de test n'est pas remplacée par une configuration live contrôlée.
+servers:
+  - url: http://localhost:8080
+    description: Développement local avec Docker Compose
+  - url: https://api.example.com
+    description: Remplacer par le domaine de l'API déployée
+security: []
+tags:
+  - name: Catalogue
+  - name: Authentification
+  - name: Favoris
+  - name: Commandes
+  - name: Paiement
+paths:
+  /api/v1/categories:
+    get:
+      tags: [Catalogue]
+      summary: Lister les catégories actives
+      responses:
+        '200':
+          description: Catégories disponibles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: {$ref: '#/components/schemas/Category'}
+  /api/v1/categories/{slug}:
+    get:
+      tags: [Catalogue]
+      summary: Lire une catégorie
+      parameters:
+        - {$ref: '#/components/parameters/Slug'}
+      responses:
+        '200':
+          description: Catégorie
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CategoryResponse'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/products:
+    get:
+      tags: [Catalogue]
+      summary: Rechercher et filtrer les produits
+      parameters:
+        - {name: q, in: query, schema: {type: string}}
+        - {name: category, in: query, schema: {type: string}}
+        - {name: gender, in: query, schema: {type: string, enum: [femme, homme, mixte]}}
+        - {name: subcategory, in: query, schema: {type: string}}
+        - {name: min_price, in: query, schema: {type: integer, minimum: 0}}
+        - {name: max_price, in: query, schema: {type: integer, minimum: 0}}
+        - {name: promo, in: query, schema: {type: boolean}}
+        - {name: in_stock, in: query, schema: {type: boolean}}
+        - {name: sort, in: query, schema: {type: string, enum: [newest, price_asc, price_desc, popular]}}
+        - {name: per_page, in: query, schema: {type: integer, minimum: 1, maximum: 48}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: Produits paginés
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/PaginatedResponse'}
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: {$ref: '#/components/schemas/Product'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/products/{slug}:
+    get:
+      tags: [Catalogue]
+      summary: Lire une fiche produit
+      parameters:
+        - {$ref: '#/components/parameters/Slug'}
+      responses:
+        '200':
+          description: Produit
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductResponse'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/auth/register:
+    post:
+      tags: [Authentification]
+      summary: Créer un compte client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, password_confirmation]
+              properties:
+                name: {type: string, maxLength: 120}
+                email: {type: string, format: email}
+                phone: {type: [string, 'null']}
+                password: {type: string, minLength: 10}
+                password_confirmation: {type: string}
+      responses:
+        '201':
+          description: Compte créé. Les appels stateless reçoivent un jeton Bearer.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomerAuthResponse'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/auth/login:
+    post:
+      tags: [Authentification]
+      summary: Ouvrir une session ou obtenir un jeton Bearer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, format: email}
+                password: {type: string}
+      responses:
+        '200':
+          description: Client authentifié
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomerAuthResponse'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/auth/me:
+    get:
+      tags: [Authentification]
+      summary: Lire le compte courant
+      security: [{sanctumBearer: []}]
+      responses:
+        '200':
+          description: Compte client
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomerResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentification]
+      summary: Fermer la session ou révoquer le jeton courant
+      security: [{sanctumBearer: []}]
+      responses:
+        '204': {description: Déconnexion terminée}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/favorites:
+    get:
+      tags: [Favoris]
+      summary: Lister les favoris du client
+      security: [{sanctumBearer: []}]
+      responses:
+        '200':
+          description: Favoris paginés
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FavoritesResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      tags: [Favoris]
+      summary: Ajouter un produit aux favoris
+      security: [{sanctumBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_slug]
+              properties:
+                product_slug: {type: string}
+      responses:
+        '201': {description: Produit ajouté}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/favorites/{slug}:
+    delete:
+      tags: [Favoris]
+      summary: Retirer un produit des favoris
+      security: [{sanctumBearer: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Slug'}
+      responses:
+        '204': {description: Favori retiré}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /api/v1/orders:
+    get:
+      tags: [Commandes]
+      summary: Lister l'historique du client connecté
+      security: [{sanctumBearer: []}]
+      responses:
+        '200':
+          description: Commandes paginées
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrdersResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      tags: [Commandes]
+      summary: Créer une commande invité ou client
+      description: Le serveur recalcule prix, remise et livraison, vérifie les variantes puis réserve le stock sous transaction.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer, payment_method, items]
+              properties:
+                customer:
+                  type: object
+                  required: [name, phone, city, address]
+                  properties:
+                    name: {type: string}
+                    email: {type: [string, 'null'], format: email}
+                    phone: {type: string}
+                    city: {type: string, enum: [Cotonou, Abomey-Calavi, Porto-Novo, Parakou]}
+                    address: {type: string}
+                payment_method: {type: string, enum: [mtn, moov, celtiis, cod]}
+                promo_code: {type: [string, 'null']}
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [product_slug, quantity]
+                    properties:
+                      product_slug: {type: string}
+                      quantity: {type: integer, minimum: 1, maximum: 20}
+                      size: {type: [string, 'null']}
+                      color: {type: [string, 'null']}
+                      bundle_id: {type: [string, 'null'], enum: [complete-look-10, null]}
+      responses:
+        '201':
+          description: Commande enregistrée
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderResponse'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/orders/{orderNumber}:
+    get:
+      tags: [Commandes]
+      summary: Lire le reçu et l’état d’une commande
+      parameters:
+        - {name: orderNumber, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Reçu de commande
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderResponse'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/orders/{orderNumber}/payments:
+    post:
+      tags: [Paiement]
+      summary: Créer ou récupérer le lien FedaPay sandbox
+      parameters:
+        - {name: orderNumber, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Lien de paiement ou état de configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      payment_url: {type: string, format: uri}
+                      order_number: {type: string, format: uuid}
+        '503': {description: Identifiants sandbox non configurés ou FedaPay indisponible}
+  /api/v1/orders/{orderNumber}/payment-simulation:
+    post:
+      tags: [Paiement]
+      summary: Simuler un résultat de paiement dans le mode démo
+      description: Disponible uniquement lorsque `PAYMENT_DRIVER=simulation`. En mode FedaPay, cette route répond 404. Un échec annule la commande et restitue le stock une seule fois.
+      parameters:
+        - {name: orderNumber, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: {type: string, enum: [succeeded, failed, pending]}
+      responses:
+        '200': {description: État de paiement mis à jour}
+        '404': {description: Mode simulation désactivé ou commande absente}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/webhooks/fedapay:
+    post:
+      tags: [Paiement]
+      summary: Recevoir les événements FedaPay
+      description: Signature `X-FEDAPAY-SIGNATURE` vérifiée avec HMAC-SHA256 et fenêtre de 300 secondes. Les événements répétés sont idempotents.
+      parameters:
+        - {name: X-FEDAPAY-SIGNATURE, in: header, required: true, schema: {type: string, example: 't=1700000000,s=signature'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '200': {description: Événement reçu ou doublon ignoré}
+        '400': {description: Corps ou signature invalide}
+        '503': {description: Secret webhook non configuré}
+components:
+  securitySchemes:
+    sanctumBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum personal access token
+  parameters:
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: {type: string}
+  responses:
+    NotFound:
+      description: Ressource absente
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthenticated:
+      description: Authentification requise
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ValidationError:
+      description: Données invalides
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ValidationError'}
+  schemas:
+    Error:
+      type: object
+      properties:
+        message: {type: string}
+    ValidationError:
+      type: object
+      properties:
+        message: {type: string}
+        errors: {type: object, additionalProperties: {type: array, items: {type: string}}}
+    Category:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        slug: {type: string}
+        description: {type: [string, 'null']}
+        products_count: {type: integer}
+        is_demo_data: {type: boolean}
+    Product:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        slug: {type: string}
+        sku: {type: string}
+        description: {type: string}
+        category: {$ref: '#/components/schemas/Category'}
+        gender: {type: [string, 'null']}
+        subcategory: {type: [string, 'null']}
+        price: {type: integer, description: Prix de vente courant en FCFA}
+        old_price: {type: [integer, 'null']}
+        is_promo: {type: boolean}
+        discount_percent: {type: [integer, 'null']}
+        images: {type: array, items: {type: string}}
+        sizes: {type: array, items: {type: string}}
+        colors: {type: array, items: {type: object, properties: {name: {type: string}, hex: {type: string}}}}
+        stock: {type: integer}
+        in_stock: {type: boolean}
+        tags: {type: array, items: {type: string}}
+        rating: {type: [number, 'null']}
+        popularity: {type: integer}
+        is_featured: {type: boolean}
+        is_demo_data: {type: boolean}
+        created_at: {type: string, format: date-time}
+    ProductResponse:
+      type: object
+      properties:
+        data: {$ref: '#/components/schemas/Product'}
+    CategoryResponse:
+      type: object
+      properties:
+        data: {$ref: '#/components/schemas/Category'}
+    Customer:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        email: {type: string, format: email}
+        phone: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+    CustomerResponse:
+      type: object
+      properties:
+        data: {$ref: '#/components/schemas/Customer'}
+    CustomerAuthResponse:
+      type: object
+      properties:
+        data: {$ref: '#/components/schemas/Customer'}
+        token: {type: string, description: Présent pour les appels stateless hors domaine SPA}
+    OrderItem:
+      type: object
+      properties:
+        product_name: {type: string}
+        product_slug: {type: string}
+        sku: {type: string}
+        size: {type: [string, 'null']}
+        color: {type: [string, 'null']}
+        quantity: {type: integer}
+        unit_price: {type: integer}
+        discount_amount: {type: integer}
+        line_total: {type: integer}
+    Order:
+      type: object
+      properties:
+        order_number: {type: string, format: uuid}
+        customer: {type: object, additionalProperties: true}
+        items: {type: array, items: {$ref: '#/components/schemas/OrderItem'}}
+        subtotal: {type: integer}
+        delivery_fee: {type: integer}
+        discount_amount: {type: integer}
+        promo_code: {type: [string, 'null']}
+        total: {type: integer}
+        status: {type: string, enum: [pending, confirmed, cancelled]}
+        payment_method: {type: string, enum: [mtn, moov, celtiis, cod]}
+        payment_status: {type: string, enum: [pending, unpaid, paid, failed]}
+        payment_url: {type: [string, 'null'], format: uri}
+        created_at: {type: string, format: date-time}
+    OrderResponse:
+      type: object
+      properties:
+        data: {$ref: '#/components/schemas/Order'}
+    OrdersResponse:
+      type: object
+      properties:
+        data: {type: array, items: {$ref: '#/components/schemas/Order'}}
+        links: {type: object, additionalProperties: true}
+        meta: {type: object, additionalProperties: true}
+    FavoritesResponse:
+      type: object
+      properties:
+        data: {type: array, items: {type: object, properties: {added_at: {type: string, format: date-time}, product: {$ref: '#/components/schemas/Product'}}}}
+        links: {type: object, additionalProperties: true}
+        meta: {type: object, additionalProperties: true}
+    PaginatedResponse:
+      type: object
+      properties:
+        links: {type: object, additionalProperties: true}
+        meta: {type: object, additionalProperties: true}

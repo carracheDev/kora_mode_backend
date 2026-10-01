@@ -19,6 +19,13 @@ services:
       SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-false}
       SESSION_SAME_SITE: ${SESSION_SAME_SITE:-lax}
       SESSION_DRIVER: file
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      PAYMENT_DRIVER: ${PAYMENT_DRIVER:-simulation}
+      FEDAPAY_BASE_URL: ${FEDAPAY_BASE_URL:-https://sandbox-api.fedapay.com/v1}
+      FEDAPAY_SECRET_KEY: ${FEDAPAY_SECRET_KEY:-}
+      FEDAPAY_WEBHOOK_SECRET: ${FEDAPAY_WEBHOOK_SECRET:-}
+      FEDAPAY_CALLBACK_URL: ${FEDAPAY_CALLBACK_URL:-}
+      SANCTUM_EXPIRATION_MINUTES: ${SANCTUM_EXPIRATION_MINUTES:-43200}
       CACHE_STORE: file
       QUEUE_CONNECTION: sync
     command: ["sh", "-c", "php artisan migrate --force && php-fpm"]

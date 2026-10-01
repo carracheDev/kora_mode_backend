@@ -1,56 +1,62 @@
 # KORA MODE API
 
-Backend Laravel 13 pour la démo e-commerce KORA MODE. Le frontend Next.js reste dans `../kora-mode`; ce projet expose une API REST versionnée et stocke le catalogue dans PostgreSQL.
+Backend Laravel 13 pour la démo e-commerce KORA MODE. Le frontend Next.js est dans `../kora-mode`. L’API REST v1 stocke le catalogue, les commandes et les comptes dans PostgreSQL (Neon en environnement partagé).
 
-## Prérequis
+## Démarrage local
 
-- PHP 8.3 avec `pdo_pgsql`
-- Composer 2
-- Docker Compose
-- Une base PostgreSQL Neon et sa chaîne de connexion
+1. Copier `.env.example` vers `.env`, renseigner `DB_URL` avec la chaîne Neon et générer `APP_KEY` (`php artisan key:generate`). Garder `DB_SSLMODE=require`.
+2. Laisser `PAYMENT_DRIVER=simulation` pour tester sans argent réel. Pour FedaPay, passer à `fedapay` et renseigner les clés **sandbox** `FEDAPAY_SECRET_KEY`, `FEDAPAY_WEBHOOK_SECRET`, plus l’URL publique de retour.
+3. Depuis ce dossier, démarrer l’API avec `docker compose up --build -d`.
+4. Charger une fois le catalogue et les codes de démonstration avec `docker compose exec app php artisan db:seed --force`.
+5. Vérifier `http://localhost:8080/up` et `http://localhost:8080/api/v1/products`.
 
-## Démarrer avec Docker
+La commande de seed remet à niveau le catalogue de démonstration. Ne la relance pas sur un catalogue dont le stock a été modifié. Les migrations de commandes sont additives et se lancent au démarrage du conteneur.
 
-1. Copier `.env.example` vers `.env`, renseigner `DB_URL` avec l’URL PostgreSQL Neon, puis générer une clé : `php artisan key:generate`.
-2. Garder `DB_SSLMODE=require` pour chiffrer la connexion Neon.
-3. Démarrer l’API : `docker compose up --build -d`. Le conteneur applique les migrations au démarrage.
-4. Charger les données de démonstration : `docker compose exec app php artisan db:seed --force`.
-5. Vérifier `/up`, puis ouvrir `http://localhost:8080/api/v1/products`.
+## Contrat API
 
-Configure `DB_TEST_URL` avec une branche ou base Neon séparée avant les tests. Ne pointe jamais `DB_TEST_URL` vers les données de production : les tests réinitialisent leur schéma.
+La spec Swagger/OpenAPI 3.1 est dans [`docs/openapi.yaml`](docs/openapi.yaml). Elle peut être importée dans Swagger UI, Postman ou Insomnia.
 
-## API catalogue v1
+### Catalogue
 
 - `GET /api/v1/categories`
 - `GET /api/v1/categories/{slug}`
 - `GET /api/v1/products`
 - `GET /api/v1/products/{slug}`
 
-Filtres produits : `q`, `category`, `gender`, `subcategory`, `min_price`, `max_price`, `promo`, `in_stock`, `sort`, `per_page`. Tri : `newest`, `price_asc`, `price_desc`, `popular`. Les listes sont paginées et les paramètres de filtre sont conservés dans les liens.
+Filtres : `q`, `category`, `gender`, `subcategory`, `min_price`, `max_price`, `promo`, `in_stock`, `sort`, `per_page`, `page`. Tri : `newest`, `price_asc`, `price_desc`, `popular`.
 
-Exemple : `GET /api/v1/products?category=femme&promo=1&sort=price_asc`.
+### Compte client et favoris
 
-Les catégories et produits du seeder copient le catalogue de démonstration KORA MODE. Prix, notes et stocks sont explicitement marqués `is_demo_data`; ils ne doivent pas être interprétés comme les données d’une boutique réelle.
+- `POST /api/v1/auth/register`, `POST /api/v1/auth/login`
+- `GET /api/v1/auth/me`, `POST /api/v1/auth/logout`
+- `GET|POST /api/v1/favorites`, `DELETE /api/v1/favorites/{slug}`
+- `GET /api/v1/orders` (historique du compte)
 
-## Comptes et favoris (Sanctum)
+Sanctum accepte la session SPA si frontend et API partagent un domaine de premier niveau. Pour un frontend Vercel et une API sur un autre domaine, les appels login/register renvoient un jeton Bearer Sanctum à conserver côté navigateur, puis à révoquer à la déconnexion. Les jetons expirent après 30 jours. Configure `CORS_ALLOWED_ORIGINS` sur l’origine exacte du frontend.
 
-- `GET /sanctum/csrf-cookie` initialise le cookie CSRF pour le frontend.
-- `POST /api/v1/auth/register` crée un compte invité (nom, email, téléphone facultatif, mot de passe confirmé).
-- `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `POST /api/v1/auth/logout` gèrent la session.
-- `GET|POST /api/v1/favorites` liste ou ajoute un favori par `product_slug`.
-- `DELETE /api/v1/favorites/{slug}` supprime un favori.
+### Commandes, stock et promotions
 
-Le frontend Next.js doit envoyer les cookies et l’en-tête `Origin`, et conserver le cookie CSRF. En local, `SANCTUM_STATEFUL_DOMAINS` et `CORS_ALLOWED_ORIGINS` sont réglés pour `localhost:3000`. En production, configure les domaines réels et `SESSION_DOMAIN` sur un domaine partagé (par exemple `shop.exemple.com` et `api.exemple.com` avec `SESSION_DOMAIN=.exemple.com`). L’authentification SPA par session Sanctum exige que le frontend et l’API partagent le même domaine de premier niveau. Active `SESSION_SECURE_COOKIE=true` derrière HTTPS.
+- `POST /api/v1/orders` crée une commande invitée ou client.
+- `GET /api/v1/orders/{orderNumber}` lit son reçu via un identifiant UUID non devinable.
+- `POST /api/v1/orders/{orderNumber}/payments` démarre ou reprend le paiement.
+- `POST /api/v1/orders/{orderNumber}/payment-simulation` simule `succeeded`, `failed` ou `pending` seulement si `PAYMENT_DRIVER=simulation`.
 
-Les tests d’authentification et de favoris utilisent `DB_TEST_URL`. Configure-la sur une branche/base Neon distincte avant de les exécuter ; ils ne doivent pas viser la base de démonstration principale.
+Le serveur recalcule prix, remise, livraison et total depuis PostgreSQL, vérifie tailles/couleurs et stock sous transaction, puis réserve le stock. Le code look `complete-look-10` n’est accepté qu’avec ses trois pièces. Les codes promo sont `BF40`, `NOEL15`, `2027`; leurs dates et produits éligibles sont dans le seeder. Les données de catalogue sont marquées comme démo.
 
-## Lots prévus
+Les moyens `mtn`, `moov` et `celtiis` utilisent la page de paiement FedaPay lorsqu’on sélectionne `PAYMENT_DRIVER=fedapay`. En mode simulation, le client choisit un résultat de démo et aucun paiement réel n’est déclenché. Le paiement à la livraison est confirmé comme commande, mais reste non payé.
 
-1. Catalogue, catégories et stock PostgreSQL.
-2. Sanctum, comptes et favoris.
-3. Panier serveur, commandes, codes promo et statuts.
-4. Paiement FedaPay sandbox.
-5. Webhooks signés et idempotents.
-6. Documentation Scribe.
-7. Conteneurisation, déploiement et compte de démo.
-# kora_mode_backend
+### FedaPay et webhooks
+
+Le backend crée une transaction XOF et un lien hébergé avec la clé API secrète côté serveur. Le webhook public `POST /api/v1/webhooks/fedapay` vérifie `X-FEDAPAY-SIGNATURE` en HMAC-SHA256 avec une tolérance de cinq minutes, stocke l’identifiant d’événement unique et ignore les répétitions. Un paiement échoué annule la commande et restitue le stock une seule fois.
+
+Les clés FedaPay sandbox sont nécessaires pour un essai de bout en bout. N’utilise aucune clé live pour la démo.
+
+## Tests
+
+Les tests utilisent `DB_CONNECTION=pgsql_testing` et réinitialisent les tables. Renseigne `DB_TEST_URL` avec une branche/base de test dédiée. **Ne pointe jamais `DB_TEST_URL` vers la base Neon qui contient les données de démonstration.** La suite complète : `php artisan test --compact`.
+
+## Déploiement
+
+Le conteneur PHP-FPM/Nginx et PostgreSQL Neon sont prêts à être déployés sur un hôte compatible Docker (par exemple Render, Railway ou Laravel Cloud). Sur l’hôte, configurer les variables de `.env.example`, appliquer les migrations, définir `APP_ENV=production`, `APP_DEBUG=false`, HTTPS, `SESSION_SECURE_COOKIE=true`, `CORS_ALLOWED_ORIGINS`, `FRONTEND_URL`, les paramètres Sanctum et le driver de paiement voulu. Déployer le frontend Next.js séparément sur Vercel avec `NEXT_PUBLIC_KORA_API_URL=https://<api>/api/v1`.
+
+Pour utiliser les cookies Sanctum en production, configure un domaine commun (par exemple `shop.example.com` et `api.example.com`). Avec des domaines distincts `*.vercel.app` et `*.onrender.com`, utilise le jeton Bearer documenté ci-dessus.

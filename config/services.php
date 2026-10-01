@@ -14,6 +14,24 @@ return [
     |
     */
 
+    'kora' => [
+        'delivery_fees' => [
+            'Cotonou' => 1000,
+            'Abomey-Calavi' => 1000,
+            'Porto-Novo' => 3000,
+            'Parakou' => 3000,
+        ],
+    ],
+
+    'fedapay' => [
+        'driver' => env('PAYMENT_DRIVER', 'simulation'),
+        'base_url' => env('FEDAPAY_BASE_URL', 'https://sandbox-api.fedapay.com/v1'),
+        'secret_key' => env('FEDAPAY_SECRET_KEY'),
+        'webhook_secret' => env('FEDAPAY_WEBHOOK_SECRET'),
+        'callback_url' => env('FEDAPAY_CALLBACK_URL'),
+        'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],
