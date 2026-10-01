@@ -49,7 +49,20 @@ Les moyens `mtn`, `moov` et `celtiis` utilisent la page de paiement FedaPay lors
 
 Le backend crée une transaction XOF et un lien hébergé avec la clé API secrète côté serveur. Le webhook public `POST /api/v1/webhooks/fedapay` vérifie `X-FEDAPAY-SIGNATURE` en HMAC-SHA256 avec une tolérance de cinq minutes, stocke l’identifiant d’événement unique et ignore les répétitions. Un paiement échoué annule la commande et restitue le stock une seule fois.
 
-Les clés FedaPay sandbox sont nécessaires pour un essai de bout en bout. N’utilise aucune clé live pour la démo.
+Pour activer le sandbox sur Render, configure côté backend :
+
+```dotenv
+PAYMENT_DRIVER=fedapay
+FEDAPAY_BASE_URL=https://sandbox-api.fedapay.com/v1
+FEDAPAY_SECRET_KEY=<clé secrète sandbox FedaPay>
+FEDAPAY_WEBHOOK_SECRET=<secret de signature du webhook>
+FRONTEND_URL=https://kora-mode.vercel.app
+FEDAPAY_CALLBACK_URL=https://kora-mode.vercel.app/commande/{order_number}
+```
+
+Dans le tableau de bord FedaPay, déclare séparément le webhook `https://kora-mode-backend.onrender.com/api/v1/webhooks/fedapay` pour les événements de transaction et reporte son secret de signature dans `FEDAPAY_WEBHOOK_SECRET`. `FEDAPAY_CALLBACK_URL` est l’URL de retour du navigateur après le paiement ; ce n’est pas l’URL du webhook.
+
+Utilise uniquement les identifiants sandbox, conserve les deux secrets dans les variables Render, jamais dans Vercel, le frontend, Git ou une conversation. N’utilise aucune clé live pour la démo.
 
 ## Tests
 

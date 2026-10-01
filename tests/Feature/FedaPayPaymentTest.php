@@ -33,6 +33,10 @@ class FedaPayPaymentTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.payment_url', 'https://fpay.li/demo-checkout');
 
+        $this->getJson("/api/v1/orders/{$order->order_number}")
+            ->assertOk()
+            ->assertJsonPath('data.payment_driver', 'fedapay');
+
         $this->assertSame('456', $order->fresh()->fedapay_transaction_id);
         $this->assertSame('https://fpay.li/demo-checkout', $order->fresh()->payment_url);
         Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/transactions')

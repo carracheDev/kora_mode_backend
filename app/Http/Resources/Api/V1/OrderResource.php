@@ -28,6 +28,7 @@ class OrderResource extends JsonResource
             'status' => $this->status,
             'payment_method' => $this->payment_method,
             'payment_status' => $this->payment_status,
+            'payment_driver' => $this->payment_method === 'cod' ? 'cod' : config('services.fedapay.driver'),
             'payment_url' => $this->payment_url,
             'created_at' => $this->created_at,
         ];
