@@ -16,5 +16,8 @@ RUN rm -f bootstrap/cache/*.php \
     && composer dump-autoload --no-dev --optimize \
     && chown -R www-data:www-data storage bootstrap/cache
 
+ENV PORT=8080
+EXPOSE 8080
+
 USER www-data
-CMD ["php-fpm"]
+CMD ["sh", "-c", "php artisan migrate --force || true; php artisan serve --host 0.0.0.0 --port ${PORT}"]
